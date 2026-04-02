@@ -46,5 +46,7 @@ This project is provided for **educational purposes** only. Use at your own risk
 
 ## Credits
 
-[theoldzoom (me)](https://github.com/theoldzoom), for adding the multiple accounts support to zt3xdv's code
-[zt3xdv](https://github.com/zt3xdv), originally made the Auto Quest code
+| Role | People |
+|------|--------|
+| **Original author** | [zt3xdv](https://github.com/zt3xdv) — initial Auto Quest implementation |
+| **Contributions** | [theoldzoom](https://github.com/theoldzoom) — multi-account support, configuration, and documentation |
