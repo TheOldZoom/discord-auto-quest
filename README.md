@@ -1,4 +1,4 @@
-# Auto Quest
+# Discord Auto Quest
 
 Node script that connects to Discord, watches for quests, and drives completion flows (activity heartbeats, video progress, etc.). Supports **multiple accounts** via comma separated tokens.
 
@@ -46,4 +46,5 @@ This project is provided for **educational purposes** only. Use at your own risk
 
 ## Credits
 
-[zt3xdv](https://github.com/zt3xdv) - Originally made the code & I added the multiple accounts support
+[theoldzoom (me)](https://github.com/theoldzoom), for adding the multiple accounts support to zt3xdv's code
+[zt3xdv](https://github.com/zt3xdv), originally made the Auto Quest code
