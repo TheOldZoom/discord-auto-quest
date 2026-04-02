@@ -55,4 +55,4 @@ This project is provided for **educational purposes** only. Use at your own risk
 | Role | People |
 |------|--------|
 | **Original author** | [zt3xdv](https://github.com/zt3xdv) — initial Auto Quest implementation |
-| **Contributions** | [theoldzoom](https://github.com/theoldzoom) — multi-account support, configuration, and documentation |
+| **Contributions** | [theoldzoom](https://github.com/theoldzoom) — multi-account support, configuration, documentation, and webhooks |
