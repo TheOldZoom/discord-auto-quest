@@ -15,8 +15,10 @@ Copy `.env.example` to `.env` and set:
 |----------|-------------|
 | `DISCORD_TOKEN` | `token` or `token1,token2,token3,...` |
 | `DISCORD_PRESENCE` | `online`, `idle`, `dnd`, or `invisible`. Default: **`dnd`** (Do Not Disturb) |
+| `CHECK_INTERVAL_MINUTES` | How often to poll for quests (e.g. `5`). Default: **`5`** |
 
 Invalid `DISCORD_PRESENCE` value fall back to `dnd` with a console warning.
+Invalid or missing `CHECK_INTERVAL_MINUTES` falls back to **5** minutes (minimum interval **1** second when a positive number is set).
 
 ## Run locally
 

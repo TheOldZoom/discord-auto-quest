@@ -44,7 +44,13 @@ const SUPER_PROPS = {
     client_build_number: 507104,
 };
 const SUPER_PROPS_B64 = Buffer.from(JSON.stringify(SUPER_PROPS)).toString('base64');
-const CHECK_INTERVAL_MS = 5 * 60 * 1000;
+const rawCheckMinutes = env.CHECK_INTERVAL_MINUTES ?? process.env.CHECK_INTERVAL_MINUTES;
+const parsedCheckMinutes = rawCheckMinutes != null && String(rawCheckMinutes).trim() !== ''
+    ? parseFloat(String(rawCheckMinutes).trim())
+    : NaN;
+const CHECK_INTERVAL_MS = !Number.isNaN(parsedCheckMinutes) && parsedCheckMinutes > 0
+    ? Math.max(1000, Math.round(parsedCheckMinutes * 60 * 1000))
+    : 5 * 60 * 1000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const VIDEO_TICK_MS = 5_000;
 const VIDEO_INCREMENT = 10;
