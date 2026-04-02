@@ -426,10 +426,10 @@ async function completeQuest(quest, setPresence, api, userLog) {
         userLog('INFO', `Video progress for "${c.bold}${name}${c.reset}"...`);
         return new Promise((resolve) => {
             const iv = setInterval(async () => {
-                progress += VIDEO_INCREMENT;
-                if (progress > required) progress = required;
+                const nextProgress = Math.min(progress + VIDEO_INCREMENT, required);
                 try {
-                    await api('POST', `/quests/${questId}/video-progress`, { timestamp: progress });
+                    await api('POST', `/quests/${questId}/video-progress`, { timestamp: nextProgress });
+                    progress = nextProgress;
                     userLog('INFO', `${c.magenta}[${name}]${c.reset} ${formatProgress(progress, required)}`);
                     if (progress >= required) {
                         clearInterval(iv);
@@ -437,9 +437,7 @@ async function completeQuest(quest, setPresence, api, userLog) {
                         resolve();
                     }
                 } catch (e) {
-                    clearInterval(iv);
-                    userLog('ERROR', `${c.red}[${name}]${c.reset} Video progress failed: ${e.message}`);
-                    resolve();
+                    userLog('WARN', `${c.red}[${name}]${c.reset} Video progress request failed: ${e.message} ${c.dim}(will retry)${c.reset}`);
                 }
             }, VIDEO_TICK_MS);
         });
