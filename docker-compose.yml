@@ -1,0 +1,7 @@
+services:
+  autoquest:
+    build: .
+    restart: unless-stopped
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      DISCORD_PRESENCE: ${DISCORD_PRESENCE:-dnd}
