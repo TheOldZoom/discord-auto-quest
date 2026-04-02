@@ -51,6 +51,9 @@ const parsedCheckMinutes = rawCheckMinutes != null && String(rawCheckMinutes).tr
 const CHECK_INTERVAL_MS = !Number.isNaN(parsedCheckMinutes) && parsedCheckMinutes > 0
     ? Math.max(1000, Math.round(parsedCheckMinutes * 60 * 1000))
     : 5 * 60 * 1000;
+const WEBHOOK_NEW = (env.QUEST_WEBHOOK_NEW || process.env.QUEST_WEBHOOK_NEW || env.QUEST_WEBHOOK_URL || process.env.QUEST_WEBHOOK_URL || '').trim() || null;
+const WEBHOOK_COMPLETED = (env.QUEST_WEBHOOK_COMPLETED || process.env.QUEST_WEBHOOK_COMPLETED || env.QUEST_WEBHOOK_URL || process.env.QUEST_WEBHOOK_URL || '').trim() || null;
+const WEBHOOK_GATEWAY = (env.QUEST_WEBHOOK_GATEWAY || process.env.QUEST_WEBHOOK_GATEWAY || env.QUEST_WEBHOOK_URL || process.env.QUEST_WEBHOOK_URL || '').trim() || null;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const VIDEO_TICK_MS = 5_000;
 const VIDEO_INCREMENT = 10;
@@ -117,6 +120,81 @@ function accountLabel(user) {
 function userLogForAccount(user) {
     const p = `${c.dim}[${accountLabel(user)}]${c.reset} `;
     return (level, ...args) => log(level, p, ...args);
+}
+
+async function postWebhook(urlStr, payload) {
+    if (!urlStr) return;
+    try {
+        const res = await fetch(urlStr, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const t = await res.text();
+            throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`);
+        }
+    } catch (e) {
+        log('WARN', `Webhook failed: ${e.message}`);
+    }
+}
+
+function webhookBodyWithUserPing(user, line, rest) {
+    const uid = user?.id != null ? String(user.id) : '';
+    const mention = uid ? `<@${uid}> ` : '';
+    const body = {
+        content: `${mention}${line}`,
+        ...rest,
+    };
+    if (uid) {
+        body.allowed_mentions = { users: [uid] };
+    }
+    return body;
+}
+
+function notifyNewQuest(user, quest) {
+    if (!WEBHOOK_NEW) return;
+    const name = quest.config?.messages?.quest_name || quest.id;
+    postWebhook(WEBHOOK_NEW, webhookBodyWithUserPing(user, `**New quest** — ${name} · ${accountLabel(user)}`, {
+        event: 'new_quest',
+        account: accountLabel(user),
+        quest_id: quest.id,
+        quest_name: name,
+        expires_at: quest.config?.expires_at ?? null,
+        at: new Date().toISOString(),
+    }));
+}
+
+function notifyQuestCompleted(user, quest) {
+    if (!WEBHOOK_COMPLETED) return;
+    const name = quest.config?.messages?.quest_name || quest.id;
+    postWebhook(WEBHOOK_COMPLETED, webhookBodyWithUserPing(user, `**Quest completed** — ${name} · ${accountLabel(user)}`, {
+        event: 'quest_completed',
+        account: accountLabel(user),
+        quest_id: quest.id,
+        quest_name: name,
+        at: new Date().toISOString(),
+    }));
+}
+
+function notifyGatewayConnected(user, snap) {
+    if (!WEBHOOK_GATEWAY) return;
+    let line = `**Gateway connected** — ${accountLabel(user)}`;
+    if (snap) {
+        line += ` · **${snap.leftToClaim}** left to claim (${snap.active.length} active, ${snap.pending.length} pending, ${snap.completed.length} done)`;
+    }
+    postWebhook(WEBHOOK_GATEWAY, webhookBodyWithUserPing(user, line, {
+        event: 'gateway_connected',
+        account: accountLabel(user),
+        user_id: user.id,
+        at: new Date().toISOString(),
+        ...(snap && {
+            active_quests: snap.active.length,
+            pending: snap.pending.length,
+            completed: snap.completed.length,
+            left_to_claim: snap.leftToClaim,
+        }),
+    }));
 }
 
 function createClient(token) {
@@ -209,7 +287,20 @@ function createClient(token) {
                 }
 
                 if (msg.t === 'READY') {
-                    resolve({ ws, user: msg.d.user, setPresence });
+                    const sessionUser = msg.d.user;
+                    (async () => {
+                        let snap = null;
+                        try {
+                            snap = await fetchActiveQuestSnapshot(api);
+                        } catch (e) {
+                            userLog('WARN', `Could not load quest / claim status: ${e.message}`);
+                        }
+                        if (snap) {
+                            userLog('INFO', `Claim status: ${c.bold}${snap.leftToClaim}${c.reset} left to claim ${c.dim}(${snap.active.length} active · ${snap.pending.length} pending · ${snap.completed.length} completed)${c.reset}`);
+                        }
+                        notifyGatewayConnected(sessionUser, snap);
+                        resolve({ ws, user: sessionUser, setPresence });
+                    })();
                 }
             });
 
@@ -287,6 +378,29 @@ function isCompleted(quest) {
     return !!quest.user_status?.completed_at;
 }
 
+function isRewardClaimed(quest) {
+    const us = quest.user_status;
+    if (!us) return false;
+    if (us.claimed_at != null || us.claimedAt != null) return true;
+    if (us.reward_claimed_at != null || us.rewardClaimedAt != null) return true;
+    if (us.claimed === true || us.reward_claimed === true) return true;
+    const rs = us.reward_state ?? us.rewardState;
+    if (rs === 'CLAIMED' || rs === 'claimed') return true;
+    if (rs === 'UNCLAIMED' || rs === 'unclaimed') return false;
+    return false;
+}
+
+async function fetchActiveQuestSnapshot(api) {
+    const data = await api('GET', '/quests/@me');
+    const quests = data?.quests || [];
+    const now = new Date();
+    const active = quests.filter((q) => new Date(q.config?.expires_at) > now);
+    const pending = active.filter((q) => !isCompleted(q));
+    const completed = active.filter((q) => isCompleted(q));
+    const leftToClaim = completed.filter((q) => !isRewardClaimed(q)).length;
+    return { active, pending, completed, leftToClaim };
+}
+
 function formatProgress(current, total) {
     const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
     const filled = Math.round(pct / 5);
@@ -295,11 +409,12 @@ function formatProgress(current, total) {
     return `${bar} ${pctColor}${c.bold}${pct}%${c.reset} ${c.dim}(${current}/${total}s)${c.reset}`;
 }
 
-async function completeQuest(quest, setPresence, api, userLog) {
+async function completeQuest(quest, setPresence, api, userLog, user) {
     const questId = quest.id;
     const { type, required } = getTaskInfo(quest);
     let progress = getProgress(quest);
     const name = quest.config?.messages?.quest_name || questId;
+    const fireCompleted = (q) => notifyQuestCompleted(user, q);
 
     userLog('QUEST', `${c.bold}${c.cyan}${name}${c.reset} ${c.dim}(${type})${c.reset}`);
     userLog('INFO', formatProgress(progress, required));
@@ -340,6 +455,7 @@ async function completeQuest(quest, setPresence, api, userLog) {
             sendHB().then(done => {
                 if (done) {
                     userLog('OK', `Quest "${c.bold}${name}${c.reset}" completed`);
+                    fireCompleted(quest);
                     resolve();
                     return;
                 }
@@ -348,6 +464,7 @@ async function completeQuest(quest, setPresence, api, userLog) {
                     if (complete) {
                         clearInterval(iv);
                         userLog('OK', `Quest "${c.bold}${name}${c.reset}" completed`);
+                        fireCompleted(quest);
                         resolve();
                     }
                 }, HEARTBEAT_INTERVAL_MS);
@@ -415,6 +532,7 @@ async function completeQuest(quest, setPresence, api, userLog) {
             const updated = data?.quests?.find(q => q.id === questId);
             if (updated && isCompleted(updated)) {
                 userLog('OK', `Quest "${c.bold}${name}${c.reset}" completed`);
+                fireCompleted(updated);
             } else {
                 userLog('INFO', `Progress sent — ${c.dim}check Discord for status${c.reset}`);
             }
@@ -434,6 +552,7 @@ async function completeQuest(quest, setPresence, api, userLog) {
                     if (progress >= required) {
                         clearInterval(iv);
                         userLog('OK', `Quest "${c.bold}${name}${c.reset}" completed`);
+                        fireCompleted(quest);
                         resolve();
                     }
                 } catch (e) {
@@ -481,6 +600,7 @@ async function completeQuest(quest, setPresence, api, userLog) {
             sendHB().then(done => {
                 if (done) {
                     userLog('OK', `Quest "${c.bold}${name}${c.reset}" completed`);
+                    fireCompleted(quest);
                     setPresence([]);
                     resolve();
                     return;
@@ -490,6 +610,7 @@ async function completeQuest(quest, setPresence, api, userLog) {
                     if (complete) {
                         clearInterval(iv);
                         userLog('OK', `Quest "${c.bold}${name}${c.reset}" completed`);
+                        fireCompleted(quest);
                         setPresence([]);
                         resolve();
                     }
@@ -501,27 +622,31 @@ async function completeQuest(quest, setPresence, api, userLog) {
     userLog('WARN', `Unsupported quest type: ${type}`);
 }
 
-async function checkAndComplete(setPresence, api, userLog) {
+async function checkAndComplete(setPresence, api, userLog, user, questPollState) {
     userLog('INFO', `Checking for available quests...`);
 
     try {
-        const data = await api('GET', '/quests/@me');
-        const quests = data?.quests || [];
-        const now = new Date();
-        const active = quests.filter(q => new Date(q.config?.expires_at) > now);
+        const { active, pending, completed, leftToClaim } = await fetchActiveQuestSnapshot(api);
 
         if (active.length === 0) {
             userLog('INFO', `${c.dim}No active quests found${c.reset}`);
+            questPollState.lastActiveIds = new Set();
             return;
         }
 
-        const pending = active.filter(q => !isCompleted(q));
-        const completed = active.filter(q => isCompleted(q));
+        if (questPollState.lastActiveIds !== null) {
+            for (const q of active) {
+                if (!questPollState.lastActiveIds.has(q.id)) {
+                    notifyNewQuest(user, q);
+                }
+            }
+        }
+        questPollState.lastActiveIds = new Set(active.map(q => q.id));
 
-        userLog('INFO', `Found ${c.bold}${active.length}${c.reset} quest(s): ${c.yellow}${pending.length} pending${c.reset}, ${c.green}${completed.length} completed${c.reset}`);
+        userLog('INFO', `Found ${c.bold}${active.length}${c.reset} quest(s): ${c.yellow}${pending.length} pending${c.reset}, ${c.green}${completed.length} completed${c.reset}, ${c.magenta}${leftToClaim} left to claim${c.reset}`);
 
         if (pending.length === 0) {
-            userLog('OK', `All quests completed ${c.dim}— claim rewards from Discord${c.reset}`);
+            userLog('OK', `All quests completed ${c.dim}— ${c.bold}${leftToClaim}${c.reset}${c.dim} reward(s) left to claim in Discord${c.reset}`);
             return;
         }
 
@@ -536,7 +661,7 @@ async function checkAndComplete(setPresence, api, userLog) {
                     continue;
                 }
             }
-            await completeQuest(quest, setPresence, api, userLog);
+            await completeQuest(quest, setPresence, api, userLog, user);
         }
     } catch (e) {
         userLog('ERROR', `Quest check failed: ${e.message}`);
@@ -555,8 +680,9 @@ async function runUserSession(token, index) {
     userLog('OK', `Logged in as ${c.bold}${accountLabel(user)}${c.reset}`);
     userLog('INFO', `${c.dim}Check interval: ${CHECK_INTERVAL_MS / 60_000}min${c.reset}`);
 
-    await checkAndComplete(setPresence, api, userLog);
-    setInterval(() => checkAndComplete(setPresence, api, userLog), CHECK_INTERVAL_MS);
+    const questPollState = { lastActiveIds: null };
+    await checkAndComplete(setPresence, api, userLog, user, questPollState);
+    setInterval(() => checkAndComplete(setPresence, api, userLog, user, questPollState), CHECK_INTERVAL_MS);
 }
 
 async function main() {
@@ -565,6 +691,13 @@ async function main() {
     console.log(`${c.bold}${c.cyan}  ╚═══════════════════════════╝${c.reset}\n`);
     log('INFO', `${c.bold}${TOKENS.length}${c.reset} account(s) — ${c.dim}DISCORD_TOKEN${c.reset} comma-separated`);
     log('INFO', `Presence: ${c.bold}${PRESENCE_STATUS}${c.reset} ${c.dim}(DISCORD_PRESENCE: online | idle | dnd | invisible)${c.reset}`);
+    if (WEBHOOK_NEW || WEBHOOK_COMPLETED || WEBHOOK_GATEWAY) {
+        const wh = [];
+        if (WEBHOOK_GATEWAY) wh.push('gateway');
+        if (WEBHOOK_NEW) wh.push('new quest');
+        if (WEBHOOK_COMPLETED) wh.push('completed');
+        log('INFO', `Webhooks: ${wh.join(' · ')}`);
+    }
     await Promise.all(TOKENS.map((token, i) => runUserSession(token, i)));
 }
 
