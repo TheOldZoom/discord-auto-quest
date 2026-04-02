@@ -21,10 +21,9 @@ Copy `.env.example` to `.env` and set:
 | `QUEST_WEBHOOK_COMPLETED` | Optional. URL only for **quest completed** notifications. |
 | `QUEST_WEBHOOK_GATEWAY` | Optional. URL for **Gateway connected** (on every `READY`, including reconnects). If unset, `QUEST_WEBHOOK_URL` is used for this event when set. |
 
-If `QUEST_WEBHOOK_NEW` / `QUEST_WEBHOOK_COMPLETED` / `QUEST_WEBHOOK_GATEWAY` are unset for an event, `QUEST_WEBHOOK_URL` is used for that event when set. Payloads use Discord’s `content` with a **user mention** (`<@user_id>`) and `allowed_mentions` so the linked account gets notified, plus `event`, `account`, and `at` (ISO time); quest events also include `quest_id` / `quest_name`. **Gateway** events also include claim snapshot fields (`left_to_claim`, `active_quests`, `pending`, `completed`) after a `GET /quests/@me` on each connect. The mentioned user must be in the server where the webhook posts. The first poll after login does not fire “new quest” for quests that were already active (only quests that **appear** on a later poll do).
+Optional `QUEST_WEBHOOK_*` URLs override `QUEST_WEBHOOK_URL` for that event. Webhooks **@mention** the account and send JSON payloads.
 
-Invalid `DISCORD_PRESENCE` value fall back to `dnd` with a console warning.
-Invalid or missing `CHECK_INTERVAL_MINUTES` falls back to **5** minutes (minimum interval **1** second when a positive number is set).
+Bad `DISCORD_PRESENCE` → **`dnd`**. Bad or missing `CHECK_INTERVAL_MINUTES` → **5** minutes.
 
 ## Run locally
 
