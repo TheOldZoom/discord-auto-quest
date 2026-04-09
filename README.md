@@ -1,3 +1,7 @@
+# HUGE DISCLAIMER
+Discord is sending out notices to people who they've detected to be using scripts or plugins that automatically complete ads (also known as Quests).
+Check this [Tweet](https://x.com/DiscordPreviews/status/2041613255165001915).
+
 # Discord Auto Quest
 
 Node script that connects to Discord, watches for quests, and drives completion flows (activity heartbeats, video progress, etc.). Supports **multiple accounts** via comma separated tokens.
@@ -47,7 +51,7 @@ docker compose logs -f autoquest
 
 ## Disclaimer
 
-This project is provided for **educational purposes** only. Use at your own risk. Automating the Discord client may conflict with Discord’s Terms of Service. Do not commit `.env` or real tokens to git.
+This project is provided for **educational purposes** only. Use at your own risk. Automating a Discord Account Breaks Discord’s Terms of Service. Do not commit `.env` or real tokens to git.
 
 ## Credits
 
